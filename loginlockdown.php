@@ -120,11 +120,19 @@ function countFails($username = "") {
 		$table_name = $wpdb->prefix . "login_fails";
 		$ip = $_SERVER['REMOTE_ADDR'];
 		$class_c = substr ($ip, 0 , strrpos ( $ip, "." ));
+		
+		$query = sprintf("SELECT COUNT(l.login_attempt_ID)
+						 FROM %s AS l
+								INNER JOIN %s AS u ON u.ID = l.user_id
+						 WHERE l.login_attempt_date + INTERVAL %s MINUTE > now()
+								AND u.user_login = '%s' AND l.login_attempt_IP LIKE '%s%%'",
+								$table_name, $wpdb->users,
+								$loginlockdownOptions['retries_within'], sanitize_user($username),
+								$wpdb->escape($class_c)
+						);
 
-		$numFails = $wpdb->get_var("SELECT COUNT(login_attempt_ID) FROM $table_name " . 
-										"WHERE login_attempt_date + INTERVAL " .
-										$loginlockdownOptions['retries_within'] . " MINUTE > now() AND " . 
-										"login_attempt_IP LIKE '" . $wpdb->escape($class_c) . "%'");
+		$numFails = $wpdb->get_var( $query );
+	
 		return $numFails;
 }
 
@@ -159,15 +167,21 @@ function lockDown($username = "") {
 		}
 }
 
-function isLockedDown() {
+function isLockedDown( $username = null ) {
 		global $wpdb;
 		$table_name = $wpdb->prefix . "lockdowns";
 		$ip = $_SERVER['REMOTE_ADDR'];
 		$class_c = substr ($ip, 0 , strrpos ( $ip, "." ));
-
-		$stillLocked = $wpdb->get_var("SELECT user_id FROM $table_name " . 
-										"WHERE release_date > now() AND " . 
-										"lockdown_IP LIKE '" . $wpdb->escape($class_c) . "%'");
+		
+		$query = sprintf( "SELECT l.user_id
+						 FROM %s AS l
+								INNER JOIN %s AS u ON u.ID = l.user_id
+						WHERE l.release_date > now() AND u.user_login = '%s'
+						AND l.lockdown_IP LIKE '%s%%'",
+						$table_name, $wpdb->users,
+						sanitize_user($username), $wpdb->escape($class_c)
+				);
+		$stillLocked = $wpdb->get_var( $query );
 
 		return $stillLocked;
 }
@@ -175,9 +189,13 @@ function isLockedDown() {
 function listLockedDown() {
 		global $wpdb;
 		$table_name = $wpdb->prefix . "lockdowns";
-
-		$listLocked = $wpdb->get_results("SELECT lockdown_ID, floor((UNIX_TIMESTAMP(release_date)-UNIX_TIMESTAMP(now()))/60) AS minutes_left, ".
-										"lockdown_IP FROM $table_name WHERE release_date > now()", ARRAY_A);
+		
+		$listLocked = $wpdb->get_results("SELECT u.user_login, l.lockdown_ID,
+												floor((UNIX_TIMESTAMP(l.release_date)-UNIX_TIMESTAMP(now()))/60) AS minutes_left,
+												l.lockdown_IP
+										 FROM $table_name AS l
+												INNER JOIN {$wpdb->users} AS u on u.ID = l.user_id
+												WHERE l.release_date > now()", ARRAY_A);
 
 		return $listLocked;
 }
@@ -282,7 +300,7 @@ if ( function_exists('wp_nonce_field') )
 		} else {
 				foreach ( $dalist as $key => $option ) {
 						?>
-<li><input type="checkbox" name="releaseme[]" value="<?php echo esc_attr($option['lockdown_ID']); ?>"> <?php echo esc_attr($option['lockdown_IP']); ?> (<?php echo esc_attr($option['minutes_left']); ?> minutes left)</li>
+<li><input type="checkbox" name="releaseme[]" value="<?php echo esc_attr($option['lockdown_ID']); ?>"> <em><?php echo esc_attr($option['user_login']); ?></em> from <em><?php echo esc_attr($option['lockdown_IP']); ?></em> (<?php echo esc_attr($option['minutes_left']); ?> minutes left)</li>
 						<?php
 				}
 		}
@@ -362,7 +380,7 @@ if ( isset($loginlockdown_db_version) ) {
 				$username = sanitize_user($username);
 				$password = trim($password);
 
-				if ( "" != isLockedDown() ) {
+				if ( "" != isLockedDown( $username ) ) {
 						return new WP_Error('incorrect_password', "<strong>ERROR</strong>: We're sorry, but this IP range has been blocked due to too many recent " .
 										"failed login attempts.<br /><br />Please try again later.");
 				}
