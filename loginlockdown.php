@@ -296,7 +296,7 @@ if ( function_exists('wp_nonce_field') )
 
 function loginlockdown_ap() {
 		if ( function_exists('add_options_page') ) {
-				add_options_page('Login LockDown', 'Login LockDown', 9, basename(__FILE__), 'print_loginlockdownAdminPage');
+				add_options_page('Login LockDown', 'Login LockDown', 'edit_user', basename(__FILE__), 'print_loginlockdownAdminPage');
 		}
 }
 
